@@ -3,7 +3,9 @@ for /F "delims===" %i in ('pip freeze -l') do pip install -U %i
 for /F "delims= " %i in ('pip list --outdated') do pip install -U %i
 To take derivatives use SymPy: pip install sympy
 
+Using doc for types; style -- reStructuredText
+
 Sample uses tuple because it's immutable (constant) and can be used as dictionary keys
 To work with vectors using NumPy: pip install numpy
 
-Create type Precedent with weights, errors and functions to interact with them.
+Moved w0 to decision threshold, normal calculation, but how to change?
