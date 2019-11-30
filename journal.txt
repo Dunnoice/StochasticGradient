@@ -8,4 +8,4 @@ Using doc for types; style -- reStructuredText
 Sample uses tuple because it's immutable (constant) and can be used as dictionary keys
 To work with vectors using NumPy: pip install numpy
 
-Moved w0 to decision threshold, normal calculation, but how to change?
+Bug: weights change too drastically -- overflow at 7 iteration
