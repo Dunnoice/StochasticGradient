@@ -8,4 +8,5 @@ Using doc for types; style -- reStructuredText
 Sample uses tuple because it's immutable (constant) and can be used as dictionary keys
 To work with vectors using NumPy: pip install numpy
 
-Bug: weights change too drastically -- overflow at 7 iteration
+Bug: weights change too drastically -- overflow at iteration < 100
+PyCharm now allows other doc styles, so TODO rewrite docs to other format
