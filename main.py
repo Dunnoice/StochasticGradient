@@ -1,5 +1,5 @@
-import random
 import numpy
+import random
 import collections
 
 
@@ -8,9 +8,9 @@ class ListLoggable(list):
 
 	def __init__(self, seq=()):
 		super().__init__(seq)
-		self.log = ()
-		if numpy.array(seq).all():
-			self._log_update()
+		self._log = []
+		# if numpy.array(seq).all():
+		# 	self._log_update()
 
 	def __setitem__(self, key, value):
 		self._log_update()
@@ -18,7 +18,17 @@ class ListLoggable(list):
 
 	def _log_update(self):
 		""" Push current value into log """
-		self.log = self.log + (super().copy(),)
+		self._log.append(super().copy())
+
+	@property
+	def log(self):
+		return self._log.copy()
+
+	@property
+	def logr(self):
+		result = self._log.copy()
+		result.reverse()
+		return result
 
 	def set(self, iterable):
 		""" clear() and extend() """
@@ -28,9 +38,9 @@ class ListLoggable(list):
 
 	def prev(self):
 		""" Get last value """
-		if 0 == len(self.log):
-			return self.log
-		return self.log[len(self.log) - 1]
+		if 0 == len(self._log):
+			return self._log
+		return self._log[len(self._log) - 1]
 
 	def append(self, object):
 		self._log_update()
@@ -78,7 +88,7 @@ class Sample(tuple):
 
 	def __new__(cls, value, add_const_attr=False):
 		"""
-		:type value: list[list[float]]
+		:type value: list[list[float]] | numpy.ndarray[float]
 		:param add_const_attr: x[0] = artificial constant attribute (default=1),
 		x starts from 1 in order to multiply to weights
 		"""
@@ -115,8 +125,7 @@ class SG_simplified:
 		self.rate_forgetting = forgetting_rate
 
 		self.weights = ListLoggable(self._init_weights())
-		self.quality = ListLoggable([None])
-		self.quality[0] = self._init_quality()
+		self.quality = ListLoggable([self._init_quality()])  # due to lack of pointers value of quality is stored in [0]
 		self.errors = ListLoggable(numpy.zeros(len(self.sample)))  # list[float]
 
 	def _init_weights(self):
@@ -149,6 +158,14 @@ class SG_simplified:
 	def _get_precedent_pos(self):
 		return random.randrange(len(self.sample))
 
+	def is_stable_quality(self, quality, quality_previous):
+		difference = numpy.sum(quality) - numpy.sum(quality_previous)
+		return 2. > difference
+
+	def is_stable_weights(self, weights, weights_previous):
+		difference = numpy.sum(weights) - numpy.sum(weights_previous)
+		return 0.0001 > difference
+
 	def is_stop_calculating(self, quality_previous, weights_previous, iteration):
 		# TODO finish condition & remove argument
 		# Q is stable
@@ -160,27 +177,25 @@ class SG_simplified:
 		w = numpy.array(self.weights)
 		w_prev = numpy.array(weights_previous)
 
-		def q_is_stable():
-			return 1.e+3 > numpy.sum(q_prev - q)
-
-		def weights_stopped_changing():
-			return 0 == numpy.sum(w_prev - w)
-
 		def too_much_iterations():
-			return iteration > (1.5 * len(self.sample))
+			return iteration > (1.75 * len(self.sample))
 
-		if (iteration > 1) and q_is_stable() and weights_stopped_changing() or too_much_iterations():
+		qs = self.is_stable_quality(q, q_prev)
+		ws = self.is_stable_weights(w, w_prev)
+		if (iteration > 10) and (qs and ws or too_much_iterations()):
 			print('Reason for stop:')
-			print('\tquality is stable:', q_is_stable())
-			print('\tweights stopped changing:', weights_stopped_changing())
-			print('\tOR too much iterations:', too_much_iterations(), iteration)
+			print(' quality is stable:', qs)
+			print(' weights stopped changing:', ws)
+			print(' OR too much iterations:', too_much_iterations(), iteration)
 			result = True
 		return result
 
 	def calculate(self):
-		def is_overflow():
-			return numpy.isinf(self.weights).any() or numpy.isnan(self.weights).any() \
-				   or numpy.isinf(self.quality[0]).any() or numpy.isnan(self.quality[0]).any()
+		def is_quality_overflow():
+			return numpy.isinf(self.quality[0]).any() or numpy.isnan(self.quality[0]).any()
+
+		def is_weights_overflow():
+			return numpy.isinf(self.weights).any() or numpy.isnan(self.weights).any()
 
 		i = 1
 		while not self.is_stop_calculating(self.quality.prev(),
@@ -193,20 +208,25 @@ class SG_simplified:
 			self.quality[0] = numpy.dot(1 - self.rate_forgetting, self.quality[0]) \
 							  + self.rate_forgetting * self.errors[pos]
 
-			if is_overflow():
-				# raise ArithmeticError('Weights overflow at iteration: ' + str(i))
-				print('***ERROR***', 'Overflow at iteration:', i)
+			if is_quality_overflow():
+				# raise ArithmeticError('overflow at iteration: ' + str(i))
+				print('\t!ERROR! quality overflow at iteration:', i)
+				i = 10000
+			if is_weights_overflow():
+				print('\t!ERROR! weights overflow at iteration:', i)
 				i = 10000
 
 			i += 1
 
-		return [i, self.quality.prev(), self.weights.prev()]
+		return (i, self.quality.prev(), self.weights.prev())
 
 	def algorithm(self, index):
 		"""
 		:return: <w, x>
 		:rtype: float
 		"""
+		test = numpy.multiply(self.weights, self.sample[index].x)
+		test2 = numpy.sum(test)
 		return numpy.dot(self.weights, self.sample[index].x)
 
 	def loss(self, y1, y2=1):
@@ -239,10 +259,11 @@ class SG_simplified:
 
 	def gradient_descent(self, index):
 		# w - learning_rate * {'}loss * x[i] * y[i]
-		loss = self.loss_diff(self.algorithm(index), self.sample[index].y)
+		alg = self.algorithm(index)
+		loss = self.loss_diff(alg, self.sample[index].y)
 		lrl = self.rate_learning * loss
-		lrlx = [lrl * x_i for x_i in self.sample[index].x]
-		lrlxy = lrlx * self.sample[index].y
+		xy = [x_i * self.sample[index].y for x_i in self.sample[index].x]
+		lrlxy = [lrl * xy_i for xy_i in xy]
 		return numpy.array(self.weights) - lrlxy
 
 
@@ -306,13 +327,21 @@ class SG(SG_simplified):
 		return result
 
 
+def info(sg):
+	print('quality:', sg.quality)
+	print('weights:', sg.weights)
+	print('q.logr:', sg.quality.logr)
+	print('w.logr:', sg.weights.logr)
+
+
 test_sample = [
 	[1., 2., 0.5],
 	[3., 4., 0.5],
 	[5., 6., 0.5]
 ]
 
-learning_rate = 0.05
+learning_r = 0.0001
+forgetting_r = learning_r
 
 
 def forgetting_rate(sample):
@@ -325,16 +354,10 @@ url1 = "https://archive.ics.uci.edu/ml/machine-learning-databases/wine-quality/w
 raw_data_1 = urlr.urlopen(url1)
 dataset1 = numpy.loadtxt(raw_data_1, delimiter=";", skiprows=1)
 
-sg1 = SG(Sample(dataset1), learning_rate, forgetting_rate(dataset1))
+sg1 = SG_simplified(Sample(dataset1), learning_r, forgetting_r)
 print('Calculate:', sg1.calculate())
-print('weights:', sg1.weights)
-print('w.log:', sg1.weights.log)
-print('quality:', sg1.quality)
-print('q.log:', sg1.quality.log)
+info(sg1)
 
-sg2 = SG(Sample(dataset1, add_const_attr=True), learning_rate, forgetting_rate(dataset1))
+sg2 = SG(Sample(dataset1, add_const_attr=True), learning_r, forgetting_r)
 print('Calculate:', sg2.calculate())
-print('weights:', sg2.weights)
-print('w.log:', sg2.weights.log)
-print('quality:', sg2.quality)
-print('q.log:', sg2.quality.log)
+info(sg2)
