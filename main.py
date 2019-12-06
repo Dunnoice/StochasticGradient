@@ -2,6 +2,8 @@ import numpy
 import random
 import collections
 
+numpy.random.seed(0)
+
 
 class ListLoggable(list):
 	"""	List that has log of its previous values """
@@ -9,8 +11,9 @@ class ListLoggable(list):
 	def __init__(self, seq=()):
 		super().__init__(seq)
 		self._log = []
-		# if numpy.array(seq).all():
-		# 	self._log_update()
+
+	# if numpy.array(seq).all():
+	# 	self._log_update()
 
 	def __setitem__(self, key, value):
 		self._log_update()
@@ -136,7 +139,7 @@ class SG_simplified:
 		shape = precedent_length
 
 		result = numpy.zeros(shape)
-		# result = numpy.random.uniform(-1 / precedent_length, 1 / precedent_length, shape)
+		# result = numpy.random.uniform(-1 / precedent_length, 1 / precedent_length, shape)  # requires normalisation
 		# result = numpy.full(shape, 0.0001)
 		return result
 
@@ -152,19 +155,71 @@ class SG_simplified:
 		"""
 		result = 0
 		for i in range(len(self.sample)):
-			result += self.loss_precedent(i)
+			result += self._loss(i)
 		return result
 
 	def _get_precedent_pos(self):
 		return random.randrange(len(self.sample))
 
+	def _algorithm(self, index):
+		"""
+		Calculates algorithm for precedent on index
+
+		:return: algorithm(w, x[i])
+		"""
+		return self.algorithm(self.weights, self.sample[index].x)
+
+	def _loss(self, index):
+		"""
+		Calculates loss of algorithm for precedent on index
+
+		:return: loss(algorithm(w, x[i]), y[i])
+		"""
+		return self.loss(self._algorithm(index), self.sample[index].y)
+
+	def algorithm(self, weights, x):
+		"""
+		:return: <w, x>
+		:rtype: float
+		"""
+		return numpy.dot(weights, x)
+
+	def loss(self, y1, y2=1):
+		"""
+		Loss function
+
+		error
+
+		bicubic
+
+		:return: (y1 - y2) ** 2
+		"""
+		return (y1 - y2) ** 2
+
+	def loss_diff(self, y1, y2=1):
+		"""
+		loss derivative by y1
+
+		:return: 2 * (y1 - y2)
+		"""
+		return 2 * (y1 - y2)
+
+	def _gradient_descent(self, index):
+		# w - learning_rate * {'}loss * x[i] * y[i]
+		alg = self._algorithm(index)
+		loss = self.loss_diff(alg, self.sample[index].y)
+		lrl = self.rate_learning * loss
+		xy = [x_i * self.sample[index].y for x_i in self.sample[index].x]
+		lrlxy = [lrl * xy_i for xy_i in xy]
+		return numpy.array(self.weights) - lrlxy
+
 	def is_stable_quality(self, quality, quality_previous):
 		difference = numpy.sum(quality) - numpy.sum(quality_previous)
-		return 2. > difference
+		return 3 > abs(difference), difference
 
 	def is_stable_weights(self, weights, weights_previous):
 		difference = numpy.sum(weights) - numpy.sum(weights_previous)
-		return 0.0001 > difference
+		return 5e-2 > abs(difference), difference
 
 	def is_stop_calculating(self, quality_previous, weights_previous, iteration):
 		# TODO finish condition & remove argument
@@ -182,11 +237,11 @@ class SG_simplified:
 
 		qs = self.is_stable_quality(q, q_prev)
 		ws = self.is_stable_weights(w, w_prev)
-		if (iteration > 10) and (qs and ws or too_much_iterations()):
-			print('Reason for stop:')
-			print(' quality is stable:', qs)
-			print(' weights stopped changing:', ws)
-			print(' OR too much iterations:', too_much_iterations(), iteration)
+		if (iteration > 10) and (qs[0] and ws[0] or too_much_iterations()):
+			print('\n Reason for stop:')
+			print('\tquality is stable:', qs)
+			print('\tweights stopped changing:', ws)
+			print('\tOR too much iterations:', too_much_iterations(), iteration)
 			result = True
 		return result
 
@@ -202,69 +257,21 @@ class SG_simplified:
 										   self.weights.prev(), i):
 			pos = self._get_precedent_pos()
 			# unclear: loss(<w, x[i]> y[i]) -- one or two args?
-			self.errors[pos] = self.loss_precedent(pos)
-			self.weights.set(self.gradient_descent(pos))
-			# (1-rf)*Q+rf*loss
-			self.quality[0] = numpy.dot(1 - self.rate_forgetting, self.quality[0]) \
-							  + self.rate_forgetting * self.errors[pos]
-
-			if is_quality_overflow():
-				# raise ArithmeticError('overflow at iteration: ' + str(i))
-				print('\t!ERROR! quality overflow at iteration:', i)
-				i = 10000
-			if is_weights_overflow():
-				print('\t!ERROR! weights overflow at iteration:', i)
-				i = 10000
-
+			self.errors[pos] = self._loss(pos)
+			try:
+				self.weights.set(self._gradient_descent(pos))
+				# (1-rf)*Q+rf*loss
+				self.quality[0] = numpy.dot(1 - self.rate_forgetting, self.quality[0]) \
+								  + self.rate_forgetting * self.errors[pos]
+				if is_quality_overflow():
+					raise ArithmeticError('quality overflow at iteration: ' + str(i))
+				if is_weights_overflow():
+					raise ArithmeticError('weights overflow at iteration: ' + str(i))
+			except ArithmeticError as error:
+				print('\t!ERROR!', error)
+				break
 			i += 1
-
-		return (i, self.quality.prev(), self.weights.prev())
-
-	def algorithm(self, index):
-		"""
-		:return: <w, x>
-		:rtype: float
-		"""
-		test = numpy.multiply(self.weights, self.sample[index].x)
-		test2 = numpy.sum(test)
-		return numpy.dot(self.weights, self.sample[index].x)
-
-	def loss(self, y1, y2=1):
-		"""
-		Loss function
-
-		error
-
-		bicubic
-
-		:return: (y1 - y2) ** 2
-		"""
-		return (y1 - y2) ** 2
-
-	def loss_precedent(self, index):
-		"""
-		Calculates loss of algorithm for precedent on index
-
-		:return: loss(alg(w, x[i]), y[i])
-		"""
-		return self.loss(self.algorithm(index), self.sample[index].y)
-
-	def loss_diff(self, y1, y2=1):
-		"""
-		loss derivative by y1
-
-		:return: 2 * (y1 - y2)
-		"""
-		return 2 * (y1 - y2)
-
-	def gradient_descent(self, index):
-		# w - learning_rate * {'}loss * x[i] * y[i]
-		alg = self.algorithm(index)
-		loss = self.loss_diff(alg, self.sample[index].y)
-		lrl = self.rate_learning * loss
-		xy = [x_i * self.sample[index].y for x_i in self.sample[index].x]
-		lrlxy = [lrl * xy_i for xy_i in xy]
-		return numpy.array(self.weights) - lrlxy
+		return i, self.weights
 
 
 class SG(SG_simplified):
@@ -304,7 +311,7 @@ class SG(SG_simplified):
 		"""
 		return 1
 
-	def algorithm(self, index):
+	def algorithm(self, weights, x):
 		"""
 		Applies activation function to x and weights
 
@@ -312,14 +319,14 @@ class SG(SG_simplified):
 		:rtype: float
 		"""
 		result = 0
-		for j in range(len(self.sample[index].x)):
-			result += self.weights[j] * self.sample[index].x[j] - self.weights[0]
+		for j in range(len(x)):
+			result += weights[j] * x[j] - weights[0]
 		return self.activate(result)
 
-	def gradient_descent(self, index):
+	def _gradient_descent(self, index):
 		# diff
 		# w - learning_rate * {'a}loss * {'}activate(<w, x[i]>) * x[i]
-		loss = self.loss_diff(self.algorithm(index), self.sample[index].y)
+		loss = self.loss_diff(self._algorithm(index), self.sample[index].y)
 		act = self.activate_diff(numpy.dot(self.weights, self.sample[index].x))
 		lrla = self.rate_learning * loss * act
 		lrlax = [lrla * x_i for x_i in self.sample[index].x]
@@ -340,7 +347,7 @@ test_sample = [
 	[5., 6., 0.5]
 ]
 
-learning_r = 0.0001
+learning_r = 1e-4
 forgetting_r = learning_r
 
 
