@@ -1,7 +1,15 @@
-python -m pip install --upgrade pip
-for /F "delims===" %i in ('pip freeze -l') do pip install -U %i
-for /F "delims= " %i in ('pip list --outdated') do pip install -U %i
-To take derivatives use SymPy: pip install sympy
+	python -m pip install --upgrade pip
+Updating all packages:
+	for /F "delims= " %i in ('pip list --outdated') do pip install -U %i
+using freeze
+	for /F "delims===" %i in ('pip freeze -l') do pip install -U %i
+
+To take derivatives use SymPy:
+	pip install sympy
+For graphs use Matplotlib:
+	python -m pip install -U pip
+	python -m pip install -U matplotlib
+
 
 Using doc for types; style -- reStructuredText
 

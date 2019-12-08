@@ -355,11 +355,10 @@ def forgetting_rate(sample):
 	return 1 / len(sample)
 
 
-import urllib.request as urlr
+file1 = 'samples/Wine Quality Data Set/winequality-red.csv'
 
-url1 = "https://archive.ics.uci.edu/ml/machine-learning-databases/wine-quality/winequality-red.csv"
-raw_data_1 = urlr.urlopen(url1)
-dataset1 = numpy.loadtxt(raw_data_1, delimiter=";", skiprows=1)
+dataset1 = numpy.loadtxt(file1, delimiter=';', skiprows=1)
+names1 = numpy.genfromtxt(file1, delimiter=';', dtype=str, max_rows=1)
 
 sg1 = SG_simplified(Sample(dataset1), learning_r, forgetting_r)
 print('Calculate:', sg1.calculate())
