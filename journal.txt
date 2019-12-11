@@ -6,9 +6,9 @@ using freeze
 
 To take derivatives use SymPy:
 	pip install sympy
-For graphs use Matplotlib:
-	python -m pip install -U pip
-	python -m pip install -U matplotlib
+
+For graphs use plotly:
+	pip install plotly
 
 
 Using doc for types; style -- reStructuredText
@@ -18,4 +18,5 @@ To work with vectors using NumPy: pip install numpy
 
 PyCharm now allows other doc styles, so TODO rewrite docs to other format
 
+Algorithm should return rounded values for Wine dataset; TODO test behaviour
 Adjust stability values for quality and weights, also probably rates

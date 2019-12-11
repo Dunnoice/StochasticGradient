@@ -91,7 +91,7 @@ class Sample(tuple):
 
 	def __new__(cls, value, add_const_attr=False):
 		"""
-		:type value: list[list[float]] | numpy.ndarray[float]
+		:type value: list[float] | numpy.ndarray[float]
 		:param add_const_attr: x[0] = artificial constant attribute (default=1),
 		x starts from 1 in order to multiply to weights
 		"""
@@ -100,7 +100,7 @@ class Sample(tuple):
 			i_y = len(sample_i) - 1
 			x_i = sample_i[0:i_y]
 			if add_const_attr:
-				x_i = [1.] + x_i
+				x_i = numpy.append(1., x_i)
 			values.append(Precedent(x_i, sample_i[i_y]))
 		return super().__new__(cls, values)
 
@@ -116,9 +116,11 @@ class SG_simplified:
 	rate_forgetting: float
 	weights: [float]
 	quality: float
-	errors: [float]
+	errors: [float]  # TODO set?
+	precision_weights: float
+	precision_quality: float
 
-	def __init__(self, sample, learning_rate, forgetting_rate):
+	def __init__(self, sample, learning_rate, forgetting_rate, weights_precision, quality_precision, *, algorithm=None):
 		"""
 		:param Sample sample: [[x ... , y]]
 		:param forgetting_rate: functional smoothing
@@ -126,6 +128,11 @@ class SG_simplified:
 		self.sample = sample
 		self.rate_learning = learning_rate
 		self.rate_forgetting = forgetting_rate
+
+		if algorithm is not None:
+			self.algorithm = algorithm
+		self.precision_weights = weights_precision
+		self.precision_quality = quality_precision
 
 		self.weights = ListLoggable(self._init_weights())
 		self.quality = ListLoggable([self._init_quality()])  # due to lack of pointers value of quality is stored in [0]
@@ -182,7 +189,7 @@ class SG_simplified:
 		:return: <w, x>
 		:rtype: float
 		"""
-		return numpy.dot(weights, x)
+		return round(numpy.dot(weights, x))
 
 	def loss(self, y1, y2=1):
 		"""
@@ -213,13 +220,13 @@ class SG_simplified:
 		lrlxy = [lrl * xy_i for xy_i in xy]
 		return numpy.array(self.weights) - lrlxy
 
-	def is_stable_quality(self, quality, quality_previous):
-		difference = numpy.sum(quality) - numpy.sum(quality_previous)
-		return 3 > abs(difference), difference
-
 	def is_stable_weights(self, weights, weights_previous):
 		difference = numpy.sum(weights) - numpy.sum(weights_previous)
-		return 5e-2 > abs(difference), difference
+		return self.precision_weights > abs(difference), difference
+
+	def is_stable_quality(self, quality, quality_previous):
+		difference = numpy.sum(quality) - numpy.sum(quality_previous)
+		return self.precision_quality > abs(difference), difference
 
 	def is_stop_calculating(self, quality_previous, weights_previous, iteration):
 		# TODO finish condition & remove argument
@@ -321,7 +328,7 @@ class SG(SG_simplified):
 		result = 0
 		for j in range(len(x)):
 			result += weights[j] * x[j] - weights[0]
-		return self.activate(result)
+		return round(self.activate(result))
 
 	def _gradient_descent(self, index):
 		# diff
@@ -341,16 +348,6 @@ def info(sg):
 	print('w.logr:', sg.weights.logr)
 
 
-test_sample = [
-	[1., 2., 0.5],
-	[3., 4., 0.5],
-	[5., 6., 0.5]
-]
-
-learning_r = 1e-4
-forgetting_r = learning_r
-
-
 def forgetting_rate(sample):
 	return 1 / len(sample)
 
@@ -360,10 +357,39 @@ file1 = 'samples/Wine Quality Data Set/winequality-red.csv'
 dataset1 = numpy.loadtxt(file1, delimiter=';', skiprows=1)
 names1 = numpy.genfromtxt(file1, delimiter=';', dtype=str, max_rows=1)
 
-sg1 = SG_simplified(Sample(dataset1), learning_r, forgetting_r)
+rate_learn = 1e-4
+rate_forget = forgetting_rate(dataset1)
+precision_w = 5e-2
+precision_q = 3
+
+options1 = {
+	'sample': Sample(dataset1),
+	'learning_rate': rate_learn,
+	'forgetting_rate': rate_forget,
+	'weights_precision': precision_w,
+	'quality_precision': precision_q
+}
+
+sg1 = SG_simplified(**options1)
 print('Calculate:', sg1.calculate())
 info(sg1)
 
-sg2 = SG(Sample(dataset1, add_const_attr=True), learning_r, forgetting_r)
+options2 = dict(options1)
+options2['sample'] = Sample(dataset1, add_const_attr=True)
+
+sg2 = SG(**options2)
 print('Calculate:', sg2.calculate())
 info(sg2)
+
+
+import matplotlib.pyplot as plt
+
+x = numpy.array([precedent.x for precedent in options1['sample']])
+y = numpy.array([precedent.y for precedent in options1['sample']])
+
+sg2y = numpy.array([sg2.algorithm(sg2.weights, precedent.x) for precedent in options1['sample']])
+
+# plt.plot(main.dataset1, '.', alpha=0.3)
+plt.plot(y, 'r*', sg2y, 'b.', alpha=0.1)
+
+plt.show()

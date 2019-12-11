@@ -14,6 +14,12 @@
 
 # print(sy.diff(L, a))
 
+# test_sample = [
+# 	[1., 2., 0.5],
+# 	[3., 4., 0.5],
+# 	[5., 6., 0.5]
+# ]
+
 # class Sample(tuple):
 # 	"""
 # 	Formatted for readability sample
@@ -111,18 +117,3 @@
 # url1 = "https://archive.ics.uci.edu/ml/machine-learning-databases/wine-quality/winequality-red.csv"
 # raw_data_1 = urlr.urlopen(url1)
 # dataset1 = numpy.loadtxt(raw_data_1, delimiter=";", skiprows=1)
-
-import matplotlib.pyplot as plt
-import main
-
-sample1 = main.Sample(main.dataset1)
-
-x = main.numpy.array([precedent.x for precedent in sample1])
-y = main.numpy.array([precedent.y for precedent in sample1])
-
-sg2y = main.numpy.array([main.sg2.algorithm(main.sg2.weights, precedent.x) for precedent in sample1])
-
-# plt.plot(main.dataset1, '.', alpha=0.3)
-plt.plot(y, 'r.', alpha=0.1)
-
-plt.show()
