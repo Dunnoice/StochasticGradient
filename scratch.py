@@ -53,7 +53,7 @@
 # 			raise ValueError(f'Sample cannot be indexed with values of type {type(key)}')
 # 		return super().__getitem__(key)
 
-# class ListLoggable(list):
+# class ListL(list):
 # 	"""	List that can be created of required length and has log of previous values """
 # 	def __init__(self, seq=(), /, length=0):
 # 		super().__init__(seq)
