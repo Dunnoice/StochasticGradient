@@ -36,7 +36,7 @@ class StochasticGradient:
 	rate_forgetting: float
 	weights: [float]
 	quality: float
-	errors: [float]  # TODO set?
+	errors: [float]  # set?
 	precision_weights: float
 	precision_quality: float
 
@@ -53,20 +53,8 @@ class StochasticGradient:
 		self.precision_quality = quality_precision
 
 		self.weights = self._init_weights()
+		self.errors = numpy.zeros(len(self.sample))
 		self.quality = self._init_quality()
-		self.errors = numpy.zeros(len(self.sample))  # list[float]
-
-	def _init_weights(self):
-		"""
-		:rtype: list[float]
-		"""
-		precedent_length = len(self.sample[0].x)
-		shape = precedent_length
-
-		result = numpy.zeros(shape)
-		# result = numpy.random.uniform(-1 / precedent_length, 1 / precedent_length, shape)  # requires normalisation
-		# result = numpy.full(shape, 0.0001)
-		return result
 
 	def _init_quality(self):
 		"""
@@ -78,9 +66,20 @@ class StochasticGradient:
 
 		:rtype: float
 		"""
-		result = 0
 		for i in range(len(self.sample)):
-			result += self._loss(i)
+			self.errors[i] = self._loss(i)
+		return numpy.sum(self.errors)
+
+	def _init_weights(self):
+		"""
+		:rtype: list[float]
+		"""
+		precedent_length = len(self.sample[0].x)
+		shape = precedent_length
+
+		result = numpy.zeros(shape)
+		# result = numpy.random.uniform(-1 / precedent_length, 1 / precedent_length, shape)  # requires normalisation
+		# result = numpy.full(shape, 0.0001)
 		return result
 
 	def _get_precedent_pos(self):
@@ -116,10 +115,6 @@ class StochasticGradient:
 	def loss(self, y1, y2):
 		pass
 
-	def _calc_step(self):
-		# TODO move loop body here
-		pass
-
 	def is_stable_weights(self, weights, weights_previous):
 		difference = numpy.sum(weights) - numpy.sum(weights_previous)
 		return self.precision_weights > abs(difference), difference
@@ -152,30 +147,37 @@ class StochasticGradient:
 			result = True
 		return result
 
-	def calculate(self):
+	def _calc_step(self):
 		def is_quality_overflow():
 			return numpy.isinf(self.quality).any() or numpy.isnan(self.quality).any()
 
 		def is_weights_overflow():
 			return numpy.isinf(self.weights).any() or numpy.isnan(self.weights).any()
 
+		pos = self._get_precedent_pos()
+		self.errors[pos] = self._loss(pos)
+
+		self.weights = self._gd_step(pos)
+		# (1-rf)*Q+rf*loss
+		self.quality = numpy.dot(1 - self.rate_forgetting, self.quality) \
+					   + self.rate_forgetting * self.errors[pos]
+
+		if is_quality_overflow():
+			raise ArithmeticError('quality overflow')
+		if is_weights_overflow():
+			raise ArithmeticError('weights overflow')
+
+		return pos
+
+	def calculate(self):
 		prev_q = self.quality
 		prev_w = self.weights
 		i = 1
 		while not self.is_stop_calculating(prev_q, prev_w, i):
-			pos = self._get_precedent_pos()
-			self.errors[pos] = self._loss(pos)
 			try:
-				self.weights = self._gd_step(pos)
-				# (1-rf)*Q+rf*loss
-				self.quality = numpy.dot(1 - self.rate_forgetting, self.quality) \
-							   + self.rate_forgetting * self.errors[pos]
-				if is_quality_overflow():
-					raise ArithmeticError('quality overflow at iteration: ' + str(i))
-				if is_weights_overflow():
-					raise ArithmeticError('weights overflow at iteration: ' + str(i))
+				self._calc_step()
 			except ArithmeticError as error:
-				print('\t!ERROR!', error)
+				print('\t!ERROR!', error, 'at iteration:', i)
 				break
 			i += 1
 		return i, self.weights

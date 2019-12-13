@@ -2,39 +2,22 @@ import numpy as np
 import random
 
 import stochastic_gradient as SG
-import loggers as lgs
 
 np.random.seed(0)
 
 
-class SGvect(SG.StochasticGradient):
-	"""
-	Stochastic Gradient
-
-	uses vector multiplication
-	"""
-
+class SGL(SG.StochasticGradient):
 	def __init__(self, sample, learning_rate, forgetting_rate, weights_precision, quality_precision):
-		"""
-		:param Sample sample: [[x ... , y]]
-		:param forgetting_rate: functional smoothing
-		"""
 		super().__init__(sample, learning_rate, forgetting_rate, weights_precision, quality_precision)
+		self.w_log, self.q_log, self.p_log = [], [], []
 
-		self.w_lgr = lgs.ValueL(self.weights, np.array, empty_value=[])
-		self.q_lgr = lgs.ValueL(self.quality, float, empty_value=0)
-		self.e_lgr = lgs.ValueL(self.errors, list, empty_value=[])
+	def _calc_step(self):
+		self.p_log.append(super()._calc_step())
+		self.w_log.append(list(self.weights))
+		self.q_log.append(self.quality)
 
 	def _get_precedent_pos(self):
 		return random.randrange(len(self.sample))
-
-	def algorithm(self, weights, x):
-		"""
-		:return: <w, x>
-		:rtype: float
-		"""
-		result = np.dot(weights, x)
-		return round(result)
 
 	def loss(self, y1, y2=1):
 		"""
@@ -56,6 +39,33 @@ class SGvect(SG.StochasticGradient):
 		"""
 		return 2 * (y1 - y2)
 
+	def info(self):
+		print('quality:', self.quality)
+		print('weights:', self.weights)
+		print('errors:', list(self.errors))
+		q_log = self.q_log.copy()
+		q_log.reverse()
+		print('q.logr:', q_log)
+		w_log = self.w_log.copy()
+		w_log.reverse()
+		print('w.logr:', w_log)
+
+
+class SGvect(SGL):
+	"""
+	Stochastic Gradient
+
+	uses vector multiplication
+	"""
+
+	def algorithm(self, weights, x):
+		"""
+		:return: <w, x>
+		:rtype: float
+		"""
+		result = np.dot(weights, x)
+		return round(result)
+
 	def _gradient_descent(self, index):
 		# {'}loss * x[i] * y[i]
 		alg = self._algorithm(index)
@@ -64,11 +74,8 @@ class SGvect(SG.StochasticGradient):
 		lxy = [loss * xy_i for xy_i in xy]
 		return lxy
 
-	def calculate(self):
-		pass
 
-
-class SGdiff(SGvect):
+class SGdiff(SGL):
 	"""
 	Stochastic Gradient
 
@@ -123,18 +130,11 @@ class SGdiff(SGvect):
 		# {'a}loss * {'}activate(<w, x[i]>) * x[i]
 		alg = self._algorithm(index)
 		loss = self.loss_diff(alg, self.sample[index].y)
-		vectm = np.dot(self.weights, self.sample[index].x)
-		act = self.activate_diff(vectm)
+		wx_vm = np.dot(self.weights, self.sample[index].x)
+		act = self.activate_diff(wx_vm)
 		la = loss * act
 		lax = [la * x_i for x_i in self.sample[index].x]
 		return lax
-
-
-def info(sg):
-	print('quality:', sg.quality)
-	print('weights:', sg.weights)
-	print('q.logr:', sg.q_lgr.logr)
-	print('w.logr:', sg.w_lgr.logr)
 
 
 file1 = 'samples/Wine Quality Data Set/winequality-red.csv'
@@ -155,24 +155,23 @@ options1 = {
 	'quality_precision': precision_q
 }
 
-sg1 = SGvect(**options1)
-print('Calculate:', sg1.calculate())
-info(sg1)
+options1_diff = dict(options1)
+options1_diff['sample'] = SG.Sample(dataset1, add_const_attr=True)
 
-options2 = dict(options1)
-options2['sample'] = SG.Sample(dataset1, add_const_attr=True)
+sg1_diff = SGdiff(**options1_diff)
+print('Calculate:', sg1_diff.calculate())
+sg1_diff.info()
 
-sg2 = SGdiff(**options2)
-print('Calculate:', sg2.calculate())
-info(sg2)
-
+# sg1_vect = SGvect(**options1)
+# print('Calculate:', sg1_vect.calculate())
+# sg1_vect.info()
 
 import matplotlib.pyplot as plt
 
 x = np.array([precedent.x for precedent in options1['sample']])
 y = np.array([precedent.y for precedent in options1['sample']])
 
-sg2y = np.array([sg2.algorithm(sg2.weights, precedent.x) for precedent in options1['sample']])
+sg2y = np.array([sg1_diff.algorithm(sg1_diff.weights, precedent.x) for precedent in options1['sample']])
 
 # plt.plot(y, 'r*', sg2y, 'b.', alpha=0.1)
 plt.plot(sg2y, 'b.', alpha=0.1)
