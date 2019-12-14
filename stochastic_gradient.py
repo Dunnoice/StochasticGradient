@@ -1,4 +1,4 @@
-import numpy
+import numpy as np
 
 import collections
 
@@ -6,7 +6,7 @@ import collections
 class Precedent(collections.namedtuple('Precedent', 'x y')):
 	@property
 	def value(self):
-		return numpy.array([self.x, self.y])
+		return np.array([self.x, self.y])
 
 
 class Sample(tuple):
@@ -25,12 +25,12 @@ class Sample(tuple):
 			i_y = len(sample_i) - 1
 			x_i = sample_i[0:i_y]
 			if add_const_attr:
-				x_i = numpy.append(1., x_i)
+				x_i = np.append(1., x_i)
 			values.append(Precedent(x_i, sample_i[i_y]))
 		return super().__new__(cls, values)
 
 
-class StochasticGradient:
+class Base:
 	sample: Sample
 	rate_learning: float
 	rate_forgetting: float
@@ -53,7 +53,7 @@ class StochasticGradient:
 		self.precision_quality = quality_precision
 
 		self.weights = self._init_weights()
-		self.errors = numpy.zeros(len(self.sample))
+		self.errors = np.zeros(len(self.sample))
 		self.quality = self._init_quality()
 
 	def _init_quality(self):
@@ -68,7 +68,7 @@ class StochasticGradient:
 		"""
 		for i in range(len(self.sample)):
 			self.errors[i] = self._loss(i)
-		return numpy.sum(self.errors)
+		return np.sum(self.errors)
 
 	def _init_weights(self):
 		"""
@@ -77,13 +77,13 @@ class StochasticGradient:
 		precedent_length = len(self.sample[0].x)
 		shape = precedent_length
 
-		result = numpy.zeros(shape)
-		# result = numpy.random.uniform(-1 / precedent_length, 1 / precedent_length, shape)  # requires normalisation
-		# result = numpy.full(shape, 0.0001)
+		result = np.zeros(shape)
+		# result = np.random.uniform(-1 / precedent_length, 1 / precedent_length, shape)  # requires normalisation
+		# result = np.full(shape, 0.0001)
 		return result
 
 	def _get_precedent_pos(self):
-		pass
+		return np.random.randint(len(self.sample))
 
 	def _algorithm(self, index):
 		"""
@@ -104,7 +104,7 @@ class StochasticGradient:
 	def _gd_step(self, index):
 		""" w - learning_rate * gradient_descent """
 		gd = self._gradient_descent(index)
-		return numpy.array(self.weights) - [self.rate_learning * gd_i for gd_i in gd]
+		return np.array(self.weights) - [self.rate_learning * gd_i for gd_i in gd]
 
 	def _gradient_descent(self, index):
 		pass
@@ -116,11 +116,11 @@ class StochasticGradient:
 		pass
 
 	def is_stable_weights(self, weights, weights_previous):
-		difference = numpy.sum(weights) - numpy.sum(weights_previous)
+		difference = np.sum(weights) - np.sum(weights_previous)
 		return self.precision_weights > abs(difference), difference
 
 	def is_stable_quality(self, quality, quality_previous):
-		difference = numpy.sum(quality) - numpy.sum(quality_previous)
+		difference = np.sum(quality) - np.sum(quality_previous)
 		return self.precision_quality > abs(difference), difference
 
 	def is_stop_calculating(self, quality_previous, weights_previous, iteration):
@@ -129,10 +129,10 @@ class StochasticGradient:
 		# and/or
 		# weights stopped changing
 		result = False
-		q = numpy.array(self.quality)
-		q_prev = numpy.array(quality_previous)
-		w = numpy.array(self.weights)
-		w_prev = numpy.array(weights_previous)
+		q = self.quality
+		q_prev = quality_previous
+		w = np.array(self.weights)
+		w_prev = np.array(weights_previous)
 
 		def too_much_iterations():
 			return iteration > (1.75 * len(self.sample))
@@ -149,17 +149,17 @@ class StochasticGradient:
 
 	def _calc_step(self):
 		def is_quality_overflow():
-			return numpy.isinf(self.quality).any() or numpy.isnan(self.quality).any()
+			return np.isinf(self.quality).any() or np.isnan(self.quality).any()
 
 		def is_weights_overflow():
-			return numpy.isinf(self.weights).any() or numpy.isnan(self.weights).any()
+			return np.isinf(self.weights).any() or np.isnan(self.weights).any()
 
 		pos = self._get_precedent_pos()
 		self.errors[pos] = self._loss(pos)
 
 		self.weights = self._gd_step(pos)
 		# (1-rf)*Q+rf*loss
-		self.quality = numpy.dot(1 - self.rate_forgetting, self.quality) \
+		self.quality = np.dot(1 - self.rate_forgetting, self.quality) \
 					   + self.rate_forgetting * self.errors[pos]
 
 		if is_quality_overflow():
@@ -174,6 +174,8 @@ class StochasticGradient:
 		prev_w = self.weights
 		i = 1
 		while not self.is_stop_calculating(prev_q, prev_w, i):
+			prev_q = self.quality
+			prev_w = self.weights
 			try:
 				self._calc_step()
 			except ArithmeticError as error:
@@ -183,5 +185,122 @@ class StochasticGradient:
 		return i, self.weights
 
 
-def forgetting_rate(sample):
+def loss_bicubic(y1, y2=1):
+	"""
+	Loss function (error), bicubic
+
+	:return: (y1 - y2) ** 2
+	"""
+	return (y1 - y2) ** 2
+
+
+def loss_diff_bicubic(y1, y2=1):
+	"""
+	bicubic loss derivative by y1
+
+	:return: 2 * (y1 - y2)
+	"""
+	return 2 * (y1 - y2)
+
+
+class Default(Base):
+	def loss(self, y1, y2=1):
+		return loss_bicubic(y1, y2)
+
+	def loss_diff(self, y1, y2=1):
+		return loss_diff_bicubic(y1, y2)
+
+	def info(self):
+		print('quality:', self.quality)
+		print('weights:', self.weights)
+		print('errors:', list(self.errors))
+
+
+class Vect(Default):
+	"""
+	Stochastic Gradient
+
+	uses vector multiplication
+	"""
+
+	def algorithm(self, weights, x):
+		"""
+		:return: <w, x>
+		:rtype: float
+		"""
+		result = np.dot(weights, x)
+		return result
+
+	def _gradient_descent(self, index):
+		# {'}loss * x[i] * y[i]
+		alg = self._algorithm(index)
+		loss = self.loss_diff(alg, self.sample[index].y)
+		xy = [x_i * self.sample[index].y for x_i in self.sample[index].x]
+		lxy = [loss * xy_i for xy_i in xy]
+		return lxy
+
+
+class Diff(Default):
+	"""
+	Stochastic Gradient
+
+	weights[0] is reserved for decision threshold
+
+	x should start from 1 in order to multiply to weights
+	x[0] = artificial constant attribute
+	"""
+
+	def activate(self, z):
+		"""
+		Activation function
+
+		phi
+
+		scalar from z
+
+		:param z: list[float] | float
+		:return: z
+		"""
+		result = 0
+		if type(z) is list:
+			for z_i in z:
+				result += z_i
+		else:
+			result = z
+		return result
+
+	def activate_diff(self, z):
+		"""
+		activation derivative
+
+		:return: 1
+		"""
+		return 1
+
+	def algorithm(self, weights, x):
+		"""
+		Applies activation function to x and weights
+
+		:return: activate(sum(w[j] * x[j] - w[0], 1, len(x)))
+		:rtype: float
+		"""
+		result = 0
+		for j in range(len(x)):
+			result += weights[j] * x[j] - weights[0]
+		result = self.activate(result)
+		return result
+
+	def _gradient_descent(self, index):
+		# diff
+		# {'a}loss * {'}activate(<w, x[i]>) * x[i]
+		alg = self._algorithm(index)
+		loss = self.loss_diff(alg, self.sample[index].y)
+		wx_vm = np.dot(self.weights, self.sample[index].x)
+		act = self.activate_diff(wx_vm)
+		la = loss * act
+		lax = [la * x_i for x_i in self.sample[index].x]
+		return lax
+
+
+def rate_forgetting_len(sample):
 	return 1 / len(sample)

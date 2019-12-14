@@ -20,4 +20,5 @@ PyCharm now allows other doc styles, so TODO rewrite docs to other format
 
 Algorithm should return rounded values for Wine dataset; TODO test behaviour
 TODO Adjust stability values for quality and weights, also probably rates
+Stable: difference between previous 'difference values'?
 TODO Write graphs
