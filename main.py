@@ -5,40 +5,61 @@ import stochastic_gradient as SG
 np.random.seed(0)
 
 
-class SGDL(SG.Diff):
-	def __init__(self, sample, learning_rate, forgetting_rate, weights_precision, quality_precision):
-		super().__init__(sample, learning_rate, forgetting_rate, weights_precision, quality_precision)
-		self.w_log, self.q_log, self.p_log, self.sw_log, self.sq_log = [], [], [], [], []
+class SGL(SG.Default):
+	def __init__(self, sample, learning_rate, forgetting_rate, quality_precision, weights_precision):
+		super().__init__(sample, learning_rate, forgetting_rate, quality_precision, weights_precision)
+		self.log_w, self.log_q, self.log_p, self.log_wd, self.log_qd, self.log_qs = [], [], [], [], [], []
+		self.log_cond = []
+
+	def _set_weights(self, new_weights):
+		self.log_w.append(list(self.weights))
+		super()._set_weights(new_weights)
+
+	def _set_quality(self, new_quality):
+		self.log_q.append(self.quality)
+		super()._set_quality(new_quality)
 
 	def _calc_step(self):
-		self.p_log.append(super()._calc_step())
-		self.w_log.append(list(self.weights))
-		self.q_log.append(self.quality)
-
-	def is_stable_quality(self, quality, quality_previous):
-		result = super().is_stable_quality(quality, quality_previous)
-		self.sq_log.append(result[1])
-		return result
-
-	def is_stable_weights(self, weights, weights_previous):
-		result = super().is_stable_weights(weights, weights_previous)
-		self.sw_log.append(result[1])
-		return result
-
-	def algorithm(self, weights, x):
-		return round(super().algorithm(weights, x))
+		qd_prev = super().quality_diff()
+		self.log_p.append(super()._calc_step())  # important
+		self.log_qd.append(self.quality_diff())
+		self.log_qs.append(self.quality_diff() - qd_prev)
+		self.log_wd.append(self.weights_diff())
+		qs = self.precision_quality >= abs(super().quality_diff() - qd_prev)
+		ws = self.precision_weights >= abs(super().weights_diff())
+		if qs:
+			cond = (qs, ws, 1)
+		elif ws:
+			cond = (qs, ws, 2)
+		else:
+			cond = (qs, ws)
+		self.log_cond.append(cond)
 
 	def info(self):
 		super().info()
-		q_log = self.q_log.copy()
-		q_log.reverse()
-		print('q.logr:', q_log)
-		w_log = self.w_log.copy()
-		w_log.reverse()
-		print('w.logr:', w_log)
-		print('sq_log', self.sq_log)
-		print('sw_log', self.sw_log)
-		print('p_log:', self.p_log)
+		rlog_q = self.log_q.copy()
+		rlog_q.reverse()
+		print('rlog_q:', rlog_q)
+		rlog_w = self.log_w.copy()
+		rlog_w.reverse()
+		print('rlog_w:', rlog_w)
+
+		print('log_qs:', self.log_qs)
+		print('log_qd:', self.log_qd)
+		print('log_wd:', self.log_wd)
+		print('log_cond:', self.log_cond)
+
+		print('log_p:', self.log_p)
+
+
+class SGDerivL(SGL, SG.Deriv):
+	pass
+
+
+class MyDerivLround(SGDerivL):
+	def algorithm(self, weights, x):
+		alg = super().algorithm(weights, x)
+		return round(alg)
 
 
 file1 = 'samples/Wine Quality Data Set/winequality-red.csv'
@@ -46,38 +67,40 @@ file1 = 'samples/Wine Quality Data Set/winequality-red.csv'
 dataset1 = np.loadtxt(file1, delimiter=';', skiprows=1)
 names1 = np.genfromtxt(file1, delimiter=';', dtype=str, max_rows=1)
 
-rate_learn = 1e-4
-rate_forget = 1e-4  # SG.rate_forgetting_len(dataset1)
-precision_w = 5e-2
-precision_q = 3
-
-options1 = {
-	'sample': SG.Sample(dataset1),
-	'learning_rate': rate_learn,
-	'forgetting_rate': rate_forget,
-	'weights_precision': precision_w,
-	'quality_precision': precision_q
+options1_diff = {
+	'sample': SG.Sample(dataset1, add_const_attr=True),
+	'learning_rate': 1e-5,
+	'forgetting_rate': 1e-4,
+	'quality_precision': 5e-5,
+	'weights_precision': 0,
 }
 
-options1_diff = dict(options1)
-options1_diff['sample'] = SG.Sample(dataset1, add_const_attr=True)
+sgdl1 = MyDerivLround(**options1_diff)
+print('Calculate:', sgdl1.calculate())
+sgdl1.info()
+sg1y = np.array([sgdl1.algorithm(sgdl1.weights, precedent.x) for precedent in options1_diff['sample']])
+print('test 1:', sg1y)
 
-sg1_diff = SGDL(**options1_diff)
-print('Calculate:', sg1_diff.calculate())
-sg1_diff.info()
+options2_diff = {
+	'sample': SG.Sample(dataset1, add_const_attr=True),
+	'learning_rate': 1e-5,
+	'forgetting_rate': 1e-4,
+	'quality_precision': 1e-4,
+	'weights_precision': 5e-5,
+}
 
-# sg1_vect = SGVL(**options1)
-# print('Calculate:', sg1_vect.calculate())
-# sg1_vect.info()
+sgdl2 = SGDerivL(**options2_diff)
+print('Calculate:', sgdl2.calculate())
+sgdl2.info()
+sg2y = np.array([sgdl2.algorithm(sgdl2.weights, precedent.x) for precedent in options2_diff['sample']])
+print('test 2:', sg2y)
 
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 
-x = np.array([precedent.x for precedent in options1['sample']])
-y = np.array([precedent.y for precedent in options1['sample']])
-
-sg2y = np.array([sg1_diff.algorithm(sg1_diff.weights, precedent.x) for precedent in options1['sample']])
-
-# plt.plot(y, 'r*', sg2y, 'b.', alpha=0.1)
-plt.plot(sg2y, 'b.', alpha=0.1)
-
-# plt.show()
+# x = np.array([precedent.x for precedent in options1_diff['sample']])
+# y = np.array([precedent.y for precedent in options1_diff['sample']])
+#
+# # plt.plot(y, 'r*', sg1y, 'b.', alpha=0.1)
+# plt.plot(sg1y, 'b.', alpha=0.1)
+#
+# # plt.show()

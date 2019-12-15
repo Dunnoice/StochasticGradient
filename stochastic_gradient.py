@@ -40,7 +40,7 @@ class Base:
 	precision_weights: float
 	precision_quality: float
 
-	def __init__(self, sample, learning_rate, forgetting_rate, weights_precision, quality_precision):
+	def __init__(self, sample, learning_rate, forgetting_rate, quality_precision, weights_precision=0):
 		"""
 		:param Sample sample: [[x ... , y]]
 		:param forgetting_rate: functional smoothing
@@ -53,8 +53,10 @@ class Base:
 		self.precision_quality = quality_precision
 
 		self.weights = self._init_weights()
+		self._prev_weights = 0
 		self.errors = np.zeros(len(self.sample))
 		self.quality = self._init_quality()
+		self._prev_quality = 0
 
 	def _init_quality(self):
 		"""
@@ -81,6 +83,14 @@ class Base:
 		# result = np.random.uniform(-1 / precedent_length, 1 / precedent_length, shape)  # requires normalisation
 		# result = np.full(shape, 0.0001)
 		return result
+
+	def _set_weights(self, new_weights):
+		self._prev_weights = self.weights
+		self.weights = new_weights
+
+	def _set_quality(self, new_quality):
+		self._prev_quality = self.quality
+		self.quality = new_quality
 
 	def _get_precedent_pos(self):
 		return np.random.randint(len(self.sample))
@@ -115,37 +125,48 @@ class Base:
 	def loss(self, y1, y2):
 		pass
 
-	def is_stable_weights(self, weights, weights_previous):
-		difference = np.sum(weights) - np.sum(weights_previous)
-		return self.precision_weights > abs(difference), difference
+	def quality_diff(self):
+		diff = np.sum(self.quality - self._prev_quality)
+		return diff
 
-	def is_stable_quality(self, quality, quality_previous):
-		difference = np.sum(quality) - np.sum(quality_previous)
-		return self.precision_quality > abs(difference), difference
+	def weights_diff(self):
+		diff = np.sum(self.weights - self._prev_weights)
+		return diff
 
-	def is_stop_calculating(self, quality_previous, weights_previous, iteration):
-		# TODO finish condition & remove argument
+	def is_stop_calculating(self, iteration, previous_q_diff):
 		# Q is stable
 		# and/or
 		# weights stopped changing
 		result = False
-		q = self.quality
-		q_prev = quality_previous
-		w = np.array(self.weights)
-		w_prev = np.array(weights_previous)
 
 		def too_much_iterations():
-			return iteration > (1.75 * len(self.sample))
+			return iteration > (2 * len(self.sample))
 
-		qs = self.is_stable_quality(q, q_prev)
-		ws = self.is_stable_weights(w, w_prev)
-		if (iteration > 10) and (qs[0] and ws[0] or too_much_iterations()):
-			print('\n Reason for stop:')
-			print('\tquality is stable:', qs)
-			print('\tweights stopped changing:', ws)
-			print('\tOR too much iterations:', too_much_iterations(), iteration)
+		q_diff = self.quality_diff() - previous_q_diff
+		w_diff = self.weights_diff()
+		is_q_stable = self.precision_quality >= abs(q_diff)
+		is_w_stable = self.precision_weights >= abs(w_diff)
+		if (iteration > 10) and (is_q_stable and is_w_stable or too_much_iterations()):
 			result = True
+			print('\n Stop:', iteration)
+			if too_much_iterations():
+				print('\ttoo much iterations:', too_much_iterations())
+			print('\tquality is stable:', is_q_stable, q_diff)
+			print('\tweights stopped changing:', is_w_stable, w_diff)
 		return result
+
+	def calculate(self):
+		i = 1
+		prev_q_diff = 0
+		while not self.is_stop_calculating(i, prev_q_diff):
+			prev_q_diff = self.quality_diff()
+			try:
+				self._calc_step()
+			except ArithmeticError as error:
+				print('\t!ERROR!', error, 'at iteration:', i)
+				break
+			i += 1
+		return i, self.weights
 
 	def _calc_step(self):
 		def is_quality_overflow():
@@ -157,10 +178,9 @@ class Base:
 		pos = self._get_precedent_pos()
 		self.errors[pos] = self._loss(pos)
 
-		self.weights = self._gd_step(pos)
+		self._set_weights(self._gd_step(pos))
 		# (1-rf)*Q+rf*loss
-		self.quality = np.dot(1 - self.rate_forgetting, self.quality) \
-					   + self.rate_forgetting * self.errors[pos]
+		self._set_quality(np.dot(1 - self.rate_forgetting, self.quality) + self.rate_forgetting * self.errors[pos])
 
 		if is_quality_overflow():
 			raise ArithmeticError('quality overflow')
@@ -168,21 +188,6 @@ class Base:
 			raise ArithmeticError('weights overflow')
 
 		return pos
-
-	def calculate(self):
-		prev_q = self.quality
-		prev_w = self.weights
-		i = 1
-		while not self.is_stop_calculating(prev_q, prev_w, i):
-			prev_q = self.quality
-			prev_w = self.weights
-			try:
-				self._calc_step()
-			except ArithmeticError as error:
-				print('\t!ERROR!', error, 'at iteration:', i)
-				break
-			i += 1
-		return i, self.weights
 
 
 def loss_bicubic(y1, y2=1):
@@ -194,7 +199,7 @@ def loss_bicubic(y1, y2=1):
 	return (y1 - y2) ** 2
 
 
-def loss_diff_bicubic(y1, y2=1):
+def loss_bicubic_deriv(y1, y2=1):
 	"""
 	bicubic loss derivative by y1
 
@@ -207,8 +212,8 @@ class Default(Base):
 	def loss(self, y1, y2=1):
 		return loss_bicubic(y1, y2)
 
-	def loss_diff(self, y1, y2=1):
-		return loss_diff_bicubic(y1, y2)
+	def loss_deriv(self, y1, y2=1):
+		return loss_bicubic_deriv(y1, y2)
 
 	def info(self):
 		print('quality:', self.quality)
@@ -234,13 +239,13 @@ class Vect(Default):
 	def _gradient_descent(self, index):
 		# {'}loss * x[i] * y[i]
 		alg = self._algorithm(index)
-		loss = self.loss_diff(alg, self.sample[index].y)
+		loss = self.loss_deriv(alg, self.sample[index].y)
 		xy = [x_i * self.sample[index].y for x_i in self.sample[index].x]
 		lxy = [loss * xy_i for xy_i in xy]
 		return lxy
 
 
-class Diff(Default):
+class Deriv(Default):
 	"""
 	Stochastic Gradient
 
@@ -269,7 +274,7 @@ class Diff(Default):
 			result = z
 		return result
 
-	def activate_diff(self, z):
+	def activate_deriv(self, z):
 		"""
 		activation derivative
 
@@ -294,9 +299,9 @@ class Diff(Default):
 		# diff
 		# {'a}loss * {'}activate(<w, x[i]>) * x[i]
 		alg = self._algorithm(index)
-		loss = self.loss_diff(alg, self.sample[index].y)
+		loss = self.loss_deriv(alg, self.sample[index].y)
 		wx_vm = np.dot(self.weights, self.sample[index].x)
-		act = self.activate_diff(wx_vm)
+		act = self.activate_deriv(wx_vm)
 		la = loss * act
 		lax = [la * x_i for x_i in self.sample[index].x]
 		return lax

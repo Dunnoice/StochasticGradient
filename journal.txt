@@ -18,7 +18,5 @@ To work with vectors using NumPy: pip install numpy
 
 PyCharm now allows other doc styles, so TODO rewrite docs to other format
 
-Algorithm should return rounded values for Wine dataset; TODO test behaviour
-TODO Adjust stability values for quality and weights, also probably rates
-Stable: difference between previous 'difference values'?
+Algorithm probably should return rounded values for Wine dataset
 TODO Write graphs
