@@ -1,11 +1,9 @@
 import numpy as np
 
-import stochastic_gradient as SG
-
-np.random.seed(0)
+import stochastic_gradient as sg
 
 
-class SGL(SG.Default):
+class SGL(sg.Default):
 	def __init__(self, sample, learning_rate, forgetting_rate, quality_precision, weights_precision):
 		super().__init__(sample, learning_rate, forgetting_rate, quality_precision, weights_precision)
 		self.log_w, self.log_q, self.log_p, self.log_wd, self.log_qd, self.log_qs = [], [], [], [], [], []
@@ -28,15 +26,14 @@ class SGL(SG.Default):
 		qs = self.precision_quality >= abs(super().quality_diff() - qd_prev)
 		ws = self.precision_weights >= abs(super().weights_diff())
 		if qs:
-			cond = (qs, ws, 1)
+			cond = 'q'
 		elif ws:
-			cond = (qs, ws, 2)
+			cond = 'w'
 		else:
-			cond = (qs, ws)
+			cond = ''
 		self.log_cond.append(cond)
 
-	def info(self):
-		super().info()
+	def info_log(self):
 		rlog_q = self.log_q.copy()
 		rlog_q.reverse()
 		print('rlog_q:', rlog_q)
@@ -52,55 +49,75 @@ class SGL(SG.Default):
 		print('log_p:', self.log_p)
 
 
-class SGDerivL(SGL, SG.Deriv):
+class SGLDeriv(SGL, sg.Deriv):
 	pass
 
 
-class MyDerivLround(SGDerivL):
-	def algorithm(self, weights, x):
-		alg = super().algorithm(weights, x)
-		return round(alg)
+class SGLVect(SGL, sg.Vect):
+	pass
 
 
+
+random_seed = 0
 file1 = 'samples/Wine Quality Data Set/winequality-red.csv'
 
 dataset1 = np.loadtxt(file1, delimiter=';', skiprows=1)
 names1 = np.genfromtxt(file1, delimiter=';', dtype=str, max_rows=1)
 
-options1_diff = {
-	'sample': SG.Sample(dataset1, add_const_attr=True),
-	'learning_rate': 1e-5,
-	'forgetting_rate': 1e-4,
-	'quality_precision': 5e-5,
-	'weights_precision': 0,
-}
 
-sgdl1 = MyDerivLround(**options1_diff)
-print('Calculate:', sgdl1.calculate())
-sgdl1.info()
-sg1y = np.array([sgdl1.algorithm(sgdl1.weights, precedent.x) for precedent in options1_diff['sample']])
-print('test 1:', sg1y)
+class MyDerivLround(SGLDeriv):
+	def algorithm(self, weights, x):
+		alg = super().algorithm(weights, x)
+		return round(alg)
 
-options2_diff = {
-	'sample': SG.Sample(dataset1, add_const_attr=True),
-	'learning_rate': 1e-5,
-	'forgetting_rate': 1e-4,
-	'quality_precision': 1e-4,
-	'weights_precision': 5e-5,
-}
 
-sgdl2 = SGDerivL(**options2_diff)
-print('Calculate:', sgdl2.calculate())
-sgdl2.info()
-sg2y = np.array([sgdl2.algorithm(sgdl2.weights, precedent.x) for precedent in options2_diff['sample']])
-print('test 2:', sg2y)
+np.random.seed(random_seed)
+options1_diff = dict(
+	sample=sg.Sample(dataset1, add_const_attr=True),
+	learning_rate=1e-5,
+	forgetting_rate=1e-4,
+	quality_precision=5e-5,
+	weights_precision=0,
+)
 
-# import matplotlib.pyplot as plt
+sgld1 = MyDerivLround(**options1_diff)
+print('Calculate SGderiv_round:\n', sgld1.calculate())
+sgld1.info()
+# sgld1.info_log()
 
-# x = np.array([precedent.x for precedent in options1_diff['sample']])
-# y = np.array([precedent.y for precedent in options1_diff['sample']])
-#
-# # plt.plot(y, 'r*', sg1y, 'b.', alpha=0.1)
-# plt.plot(sg1y, 'b.', alpha=0.1)
-#
-# # plt.show()
+
+np.random.seed(random_seed)
+options1_diff2 = dict(
+	sample=sg.Sample(dataset1, add_const_attr=True),
+	learning_rate=1e-5,
+	forgetting_rate=1e-4,
+	quality_precision=9e-6,
+	weights_precision=5e-5,
+)
+
+sgld1_2 = SGLDeriv(**options1_diff2)
+print('Calculate SGderiv:\n', sgld1_2.calculate())
+sgld1_2.info()
+sgld1_2.info_log()
+
+
+np.random.seed(random_seed)
+options1_vect = dict(
+	sample=sg.Sample(dataset1),
+	learning_rate=1e-5,
+	forgetting_rate=1e-4,
+	quality_precision=5e-5,
+	weights_precision=0,
+)
+
+
+class MyVectLround(SGLVect):
+	def algorithm(self, weights, x):
+		alg = super().algorithm(weights, x)
+		return round(alg)
+
+
+sglv1 = MyVectLround(**options1_vect)
+print('Calculate SGvect_round:\n', sglv1.calculate())
+sglv1.info()
+# sglv1.info_log()

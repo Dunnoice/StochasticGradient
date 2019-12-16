@@ -18,5 +18,4 @@ To work with vectors using NumPy: pip install numpy
 
 PyCharm now allows other doc styles, so TODO rewrite docs to other format
 
-Algorithm probably should return rounded values for Wine dataset
-TODO Write graphs
+TODO Move graphs to function in MySGL
