@@ -7,15 +7,22 @@ using freeze
 To take derivatives use SymPy:
 	pip install sympy
 
-For graphs use plotly:
+
+To work with vectors using NumPy:
+	pip install numpy
+
+For graphs using plotly:
 	pip install plotly
 
 
+Theory:
+	http://www.machinelearning.ru/wiki/index.php?title=Метод_стохастического_градиента
+	http://www.machinelearning.ru/wiki/images/6/6d/Voron-ML-1.pdf
+	http://www.machinelearning.ru/wiki/images/5/53/Voron-ML-Lin-SG.pdf
+
+
 Using doc for types; style -- reStructuredText
+PyCharm now allows other doc styles, so todo rewrite docs to other format
 
 Sample uses tuple because it's immutable (constant) and can be used as dictionary keys
-To work with vectors using NumPy: pip install numpy
-
-PyCharm now allows other doc styles, so TODO rewrite docs to other format
-
-TODO Move graphs to function in MySGL
+Behaviour of SG with len(y) > 1 is ambiguous! TODO len(y) > 1

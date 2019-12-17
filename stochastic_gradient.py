@@ -14,7 +14,7 @@ class Sample(tuple):
 	Formatted sample
 	"""
 
-	def __new__(cls, value, add_const_attr=False):
+	def __new__(cls, value, response_pos, add_const_attr=False):
 		"""
 		:type value: list[float] | numpy.ndarray[float]
 		:param add_const_attr: x[0] = artificial constant attribute (default=1),
@@ -22,11 +22,10 @@ class Sample(tuple):
 		"""
 		values = []
 		for sample_i in value:
-			i_y = len(sample_i) - 1
-			x_i = sample_i[0:i_y]
+			x_i = sample_i[0:response_pos]
 			if add_const_attr:
 				x_i = np.append(1., x_i)
-			values.append(Precedent(x_i, sample_i[i_y]))
+			values.append(Precedent(x_i, sample_i[response_pos]))
 		return super().__new__(cls, values)
 
 
@@ -35,12 +34,12 @@ class Base:
 	rate_learning: float
 	rate_forgetting: float
 	weights: [float]
-	quality: float
-	errors: [float]  # set?
+	quality_: float
+	errors: [float]
 	precision_weights: float
 	precision_quality: float
 
-	def __init__(self, sample, learning_rate, forgetting_rate, quality_precision, weights_precision=0):
+	def __init__(self, sample, learning_rate, forgetting_rate, quality_precision, weights_precision=0.0):
 		"""
 		:param Sample sample: [[x ... , y]]
 		:param forgetting_rate: functional smoothing
@@ -54,11 +53,18 @@ class Base:
 
 		self.weights = self._init_weights()
 		self._prev_weights = 0
-		self.errors = np.zeros(len(self.sample))
-		self.quality = self._init_quality()
+		self.errors = self._init_errors()
+		self.quality_ = self.quality()  # scalar of Q -- Q_
 		self._prev_quality = 0
 
-	def _init_quality(self):
+	def _init_errors(self):
+		length = len(self.sample)
+		errors = np.zeros(length)
+		for i in range(length):
+			errors[i] = self._loss(i)
+		return errors
+
+	def quality(self):
 		"""
 		Empirical risk
 
@@ -68,8 +74,6 @@ class Base:
 
 		:rtype: float
 		"""
-		for i in range(len(self.sample)):
-			self.errors[i] = self._loss(i)
 		return np.sum(self.errors)
 
 	def _init_weights(self):
@@ -80,8 +84,6 @@ class Base:
 		shape = precedent_length
 
 		result = np.zeros(shape)
-		# result = np.random.uniform(-1 / precedent_length, 1 / precedent_length, shape)  # requires normalisation
-		# result = np.full(shape, 0.0001)
 		return result
 
 	def _set_weights(self, new_weights):
@@ -89,8 +91,8 @@ class Base:
 		self.weights = new_weights
 
 	def _set_quality(self, new_quality):
-		self._prev_quality = self.quality
-		self.quality = new_quality
+		self._prev_quality = self.quality_
+		self.quality_ = new_quality
 
 	def _get_precedent_pos(self):
 		return np.random.randint(len(self.sample))
@@ -123,10 +125,11 @@ class Base:
 		pass
 
 	def loss(self, y1, y2):
+		""" Loss function (error) """
 		pass
 
 	def quality_diff(self):
-		diff = np.sum(self.quality - self._prev_quality)
+		diff = np.sum(self.quality_ - self._prev_quality)
 		return diff
 
 	def weights_diff(self):
@@ -148,10 +151,10 @@ class Base:
 		is_w_stable = self.precision_weights >= abs(w_diff)
 		if (iteration > 10) and (is_q_stable and is_w_stable or too_much_iterations()):
 			result = True
-			print('\n Stop:', iteration)
+			print('\n Stop:', iteration)  # TODO move to info
 			if too_much_iterations():
 				print('\ttoo much iterations:', too_much_iterations())
-			print('\tquality is stable:', is_q_stable, q_diff)
+			print('\tquality_ is stable:', is_q_stable, q_diff)
 			print('\tweights stopped changing:', is_w_stable, w_diff)
 		return result
 
@@ -170,7 +173,7 @@ class Base:
 
 	def _calc_step(self):
 		def is_quality_overflow():
-			return np.isinf(self.quality).any() or np.isnan(self.quality).any()
+			return np.isinf(self.quality_).any() or np.isnan(self.quality_).any()
 
 		def is_weights_overflow():
 			return np.isinf(self.weights).any() or np.isnan(self.weights).any()
@@ -180,10 +183,11 @@ class Base:
 
 		self._set_weights(self._gd_step(pos))
 		# (1-rf)*Q+rf*loss
-		self._set_quality(np.dot(1 - self.rate_forgetting, self.quality) + self.rate_forgetting * self.errors[pos])
+		self._set_quality(np.dot(1 - self.rate_forgetting, self.quality_) + self.rate_forgetting * self.errors[pos])
+		# so what is quality_ -- function or value?
 
 		if is_quality_overflow():
-			raise ArithmeticError('quality overflow')
+			raise ArithmeticError('quality_ overflow')
 		if is_weights_overflow():
 			raise ArithmeticError('weights overflow')
 
@@ -192,7 +196,7 @@ class Base:
 
 def loss_bicubic(y1, y2=1):
 	"""
-	Loss function (error), bicubic
+	Bicubic
 
 	:return: (y1 - y2) ** 2
 	"""
@@ -201,7 +205,7 @@ def loss_bicubic(y1, y2=1):
 
 def loss_bicubic_deriv(y1, y2=1):
 	"""
-	bicubic loss derivative by y1
+	Bicubic loss derivative by y1
 
 	:return: 2 * (y1 - y2)
 	"""
@@ -216,7 +220,7 @@ class Default(Base):
 		return loss_bicubic_deriv(y1, y2)
 
 	def info(self):
-		print('quality:', self.quality)
+		print('quality_:', self.quality_)
 		print('weights:', self.weights)
 		print('errors:', list(self.errors))
 
@@ -230,6 +234,8 @@ class Vect(Default):
 
 	def algorithm(self, weights, x):
 		"""
+		Linear
+
 		:return: <w, x>
 		:rtype: float
 		"""
@@ -307,5 +313,37 @@ class Deriv(Default):
 		return lax
 
 
-def rate_forgetting_len(sample):
-	return 1 / len(sample)
+def rate_forgetting_len(n):
+	"""
+	:return: 1 / n
+	"""
+	return 1 / n
+
+
+def weights_init_rand(n):
+	"""
+	Requires normalisation of sample!
+
+	:return: rand(-1/n, 1/n)
+	"""
+	result = np.random.uniform(-1 / n, 1 / n, n)
+	return result
+
+
+def loss_binary_approx(y1, y2):
+	"""
+	derivative by y1: y2
+
+	:return: y1 * y2
+	"""
+	return y1 * y2
+
+
+def loss_binary(y1, y2):
+	"""
+	http://www.machinelearning.ru/wiki/images/5/53/Voron-ML-Lin-SG.pdf
+
+	:return: [y1 * y2 < 0]
+	"""
+	result = y1 * y2
+	return result if 0 > result else 0
