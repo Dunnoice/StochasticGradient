@@ -1,106 +1,164 @@
 import numpy as np
 
 import stochastic_gradient as SG
-
-np.random.seed(0)
-
-
-class SGL(SG.Default):
-	def __init__(self, sample, learning_rate, forgetting_rate, quality_precision, weights_precision):
-		super().__init__(sample, learning_rate, forgetting_rate, quality_precision, weights_precision)
-		self.log_w, self.log_q, self.log_p, self.log_wd, self.log_qd, self.log_qs = [], [], [], [], [], []
-		self.log_cond = []
-
-	def _set_weights(self, new_weights):
-		self.log_w.append(list(self.weights))
-		super()._set_weights(new_weights)
-
-	def _set_quality(self, new_quality):
-		self.log_q.append(self.quality)
-		super()._set_quality(new_quality)
-
-	def _calc_step(self):
-		qd_prev = super().quality_diff()
-		self.log_p.append(super()._calc_step())  # important
-		self.log_qd.append(self.quality_diff())
-		self.log_qs.append(self.quality_diff() - qd_prev)
-		self.log_wd.append(self.weights_diff())
-		qs = self.precision_quality >= abs(super().quality_diff() - qd_prev)
-		ws = self.precision_weights >= abs(super().weights_diff())
-		if qs:
-			cond = (qs, ws, 1)
-		elif ws:
-			cond = (qs, ws, 2)
-		else:
-			cond = (qs, ws)
-		self.log_cond.append(cond)
-
-	def info(self):
-		super().info()
-		rlog_q = self.log_q.copy()
-		rlog_q.reverse()
-		print('rlog_q:', rlog_q)
-		rlog_w = self.log_w.copy()
-		rlog_w.reverse()
-		print('rlog_w:', rlog_w)
-
-		print('log_qs:', self.log_qs)
-		print('log_qd:', self.log_qd)
-		print('log_wd:', self.log_wd)
-		print('log_cond:', self.log_cond)
-
-		print('log_p:', self.log_p)
+import sg_my
+import sg_graphs as g
 
 
-class SGDerivL(SGL, SG.Deriv):
-	pass
+def set_random_seed(new_seed=None):
+	if new_seed is None:
+		return
+	np.random.seed(new_seed)
 
 
-class MyDerivLround(SGDerivL):
+random_seed = 0
+# https://archive.ics.uci.edu/ml/machine-learning-databases/wine-quality/
+file1 = 'samples/Wine Quality Data Set/winequality-red.csv'
+
+dataset1 = np.loadtxt(file1, delimiter=';', skiprows=1)
+dataset1_name = 'Red Wine Quality'
+dataset1_names = np.genfromtxt(file1, delimiter=';', dtype=str, max_rows=1)
+# xy = {name: x_i for name, x_i in zip(dataset1_names, dataset1.transpose())}
+# g.dataset_scatter(dataset1, dataset1_names)
+
+
+# 1.1
+class MyLA_round(sg_my.SGLActiv):
 	def algorithm(self, weights, x):
 		alg = super().algorithm(weights, x)
 		return round(alg)
 
 
-file1 = 'samples/Wine Quality Data Set/winequality-red.csv'
+set_random_seed(random_seed)
+options1_a = dict(
+	sample=SG.Sample(dataset1, add_const_attr=True),
+	learning_rate=1e-5,
+	forgetting_rate=1e-4,
+	quality_precision=5e-5,
+	weights_precision=0
+)
 
-dataset1 = np.loadtxt(file1, delimiter=';', skiprows=1)
-names1 = np.genfromtxt(file1, delimiter=';', dtype=str, max_rows=1)
+sgla1 = MyLA_round(**options1_a)
+sgla1_name = 'SG Activ'
+print('Calculate', dataset1_name, sgla1_name, ':\n', sgla1.calculate())
+sgla1.info()
+# sgla1.info_log()
+sgla1_g = g.Graphs(sgla1, dataset1_name, sgla1_name)
+# sgla1_g.all()
 
-options1_diff = {
-	'sample': SG.Sample(dataset1, add_const_attr=True),
-	'learning_rate': 1e-5,
-	'forgetting_rate': 1e-4,
-	'quality_precision': 5e-5,
-	'weights_precision': 0,
-}
 
-sgdl1 = MyDerivLround(**options1_diff)
-print('Calculate:', sgdl1.calculate())
-sgdl1.info()
-sg1y = np.array([sgdl1.algorithm(sgdl1.weights, precedent.x) for precedent in options1_diff['sample']])
-print('test 1:', sg1y)
+# 1.2
+set_random_seed(random_seed)
+options1_a2 = dict(
+	sample=SG.Sample(dataset1, add_const_attr=True),
+	learning_rate=1e-5,
+	forgetting_rate=1e-4,
+	quality_precision=9e-6,
+	weights_precision=5e-5
+)
 
-options2_diff = {
-	'sample': SG.Sample(dataset1, add_const_attr=True),
-	'learning_rate': 1e-5,
-	'forgetting_rate': 1e-4,
-	'quality_precision': 1e-4,
-	'weights_precision': 5e-5,
-}
+sgla1_2 = sg_my.SGLActiv(**options1_a2)
+sgla1_2_name = 'SG Activ float'
+print('Calculate', dataset1_name, sgla1_2_name, ':\n', sgla1_2.calculate())
+sgla1_2.info()
+# sgla1_2.info_log()
+sgla1_2_g = g.Graphs(sgla1_2, dataset1_name, sgla1_2_name)
+# sgla1_2_g.all()
 
-sgdl2 = SGDerivL(**options2_diff)
-print('Calculate:', sgdl2.calculate())
-sgdl2.info()
-sg2y = np.array([sgdl2.algorithm(sgdl2.weights, precedent.x) for precedent in options2_diff['sample']])
-print('test 2:', sg2y)
 
-# import matplotlib.pyplot as plt
+# 1.3
+class MyLS_round(sg_my.SGLSimple):
+	def algorithm(self, weights, x):
+		alg = super().algorithm(weights, x)
+		return round(alg)
 
-# x = np.array([precedent.x for precedent in options1_diff['sample']])
-# y = np.array([precedent.y for precedent in options1_diff['sample']])
-#
-# # plt.plot(y, 'r*', sg1y, 'b.', alpha=0.1)
-# plt.plot(sg1y, 'b.', alpha=0.1)
-#
-# # plt.show()
+
+set_random_seed(random_seed)
+options1_s = dict(
+	sample=SG.Sample(dataset1),
+	learning_rate=1e-5,
+	forgetting_rate=1e-4,
+	quality_precision=5e-5,
+	weights_precision=0
+)
+
+sgls1 = MyLS_round(**options1_s)
+sgls1_name = 'SG Simple'
+print('Calculate', dataset1_name, sgls1_name, ':\n', sgls1.calculate())
+sgls1.info()
+# sgls1.info_log()
+sgls1_g = g.Graphs(sgls1, dataset1_name, sgls1_name)
+# sgls1_g.all()
+
+
+fig1 = g.fig_get_new()
+sgla1_g.scatter1_init(fig1)
+sgla1_g.scatter1_add(fig1)
+sgla1_g.scatter1_add(fig1, sgla1_2_g.ya.round(), sgla1_2_g.name_algorithm)
+sgla1_g.scatter1_add(fig1, sgls1_g.ya, sgls1_g.name_algorithm)
+# fig1.show()
+
+fig2 = g.fig_get_new()
+sgla1_g.histogram_init(fig2)
+sgla1_g.histogram_add(fig2)
+sgla1_g.histogram_add(fig2, sgla1_2_g.ya.round(), sgla1_2_g.name_algorithm)
+sgla1_g.histogram_add(fig2, sgls1_g.ya, sgls1_g.name_algorithm)
+# fig2.show()
+
+fig3 = g.fig_get_new()
+sgla1_g.scatter2_init(fig3)
+sgla1_g.scatter2_add(fig3)
+sgla1_g.scatter2_add(fig3, sgla1_2_g.ya.round(), sgla1_2_g.name_algorithm)
+sgla1_g.scatter2_add(fig3, sgls1_g.ya, sgls1_g.name_algorithm)
+# fig3.show()
+
+
+file2 = 'samples/Wine Quality Data Set/winequality-white.csv'
+
+dataset2 = np.loadtxt(file2, delimiter=';', skiprows=1)
+dataset2_name = 'White Wine Quality'
+dataset2_names = np.genfromtxt(file2, delimiter=';', dtype=str, max_rows=1)
+# g.dataset_scatter(dataset2, dataset2_names)
+
+set_random_seed(random_seed)
+options2_s = dict(
+	sample=SG.Sample(dataset2),
+	learning_rate=1e-7,
+	forgetting_rate=1e-4,
+	quality_precision=5e-5,
+	weights_precision=0
+)
+
+sgls2 = MyLS_round(**options2_s)
+sgls2_name = sgls1_name
+print('Calculate', dataset2_name, sgls2_name, ':\n', sgls2.calculate())
+sgls2.info()
+# sgls2.info_log()
+sgls2_g = g.Graphs(sgls1, dataset2_name, sgls2_name)
+# sgls2_g.all()
+
+
+# https://archive.ics.uci.edu/ml/machine-learning-databases/00291/airfoil_self_noise.dat
+file3 = 'samples/airfoil_self_noise.dat'
+dataset3 = np.loadtxt(file3)
+dataset3_name = 'Airfoil Self-Noise'
+dataset3_names = ['Frequency, Hz', 'Angle of attack, degr', 'Chord length, m', 'Free-stream velocity, m/s',
+				  'Suction side displacement thickness, m', 'Scaled sound pressure level, db']
+# g.dataset_scatter(dataset3, dataset3_names)
+
+set_random_seed(random_seed)
+options3_s = dict(
+	sample=SG.Sample(dataset3),
+	learning_rate=1e-12,
+	forgetting_rate=1e-6,
+	quality_precision=5e-5,
+	weights_precision=1e-5
+)
+
+sgls3 = sg_my.SGLSimple(**options3_s)
+sgls3_name = sgls1_name
+print('Calculate', dataset3_name, sgls3_name, ':\n', sgls3.calculate())
+sgls3.info()
+sgls3.info_log()
+sgls3_g = g.Graphs(sgls3, dataset3_name, sgls3_name)
+sgls3_g.all()
