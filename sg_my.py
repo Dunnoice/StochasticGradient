@@ -1,6 +1,4 @@
 import stochastic_gradient as SG
-import plotly.graph_objects as go
-import numpy as np
 
 
 class SGL(SG.Default):
@@ -14,27 +12,27 @@ class SGL(SG.Default):
 		super()._set_weights(new_weights)
 
 	def _set_quality(self, new_quality):
-		self.log_q.append(str(self.quality_) + ' (' + str(self.quality()) + ')')
+		self.log_q.append(str(self.quality) + ' (' + str(self.q()) + ' diff:' + str(self.quality - self.q()) + ')')
 		super()._set_quality(new_quality)
 
-	def _calc_step(self):
-		qd_prev = super().quality_diff()
-		self.log_p.append(super()._calc_step())  # important
+	def _calc_step(self, index):
+		result = super()._calc_step(index)
+		self.log_p.append(result)
 		self.log_qd.append(self.quality_diff())
-		self.log_qs.append(self.quality_diff() - qd_prev)
+		self.log_qs.append(self.stability_quality())
 		self.log_wd.append(self.weights_diff())
-		qs = self.precision_quality >= abs(super().quality_diff() - qd_prev)
-		ws = self.precision_weights >= abs(super().weights_diff())
-		if qs:
+		if self.is_stable_quality():
 			cond = 'q'
-		elif ws:
+		elif self.is_stable_weights():
 			cond = 'w'
 		else:
 			cond = ''
 		self.log_cond.append(cond)
+		return result
 
 	def info_log(self):
 		""" May overload console buffer! """
+		print('log_p:', self.log_p)
 		rlog_q = self.log_q.copy()
 		rlog_q.reverse()
 		print('rlog_q:', rlog_q)
@@ -47,119 +45,10 @@ class SGL(SG.Default):
 		print('log_wd:', self.log_wd)
 		print('log_cond:', self.log_cond)
 
-		print('log_p:', self.log_p)
 
-
-class SGLDeriv(SGL, SG.Deriv):
+class SGLActiv(SGL, SG.Activ):
 	pass
 
 
-class SGLVect(SGL, SG.Vect):
+class SGLSimple(SGL, SG.Simple):
 	pass
-
-
-class Graphs:
-	def __init__(self, sg, dataset_name, algorithm_name):
-		self.name_dataset = dataset_name
-		self.name_algorithm = algorithm_name
-		self.y = np.array([precedent.y for precedent in sg.sample])
-		self.ya = np.array([sg.algorithm(sg.weights, precedent.x) for precedent in sg.sample])
-
-	def histogram_init(self, fig):
-		fig.add_trace(go.Histogram(
-			x=self.y,
-			name=self.name_dataset
-		))
-
-	def histogram_add(self, fig, ya=None, name=None):
-		if ya is None:
-			ya = self.ya
-		if name is None:
-			name = self.name_algorithm
-		fig.add_trace(go.Histogram(
-			x=ya,
-			name=name
-		))
-
-	def histogram(self):
-		fig = go.Figure()
-		self.histogram_init(fig)
-		self.histogram_add(fig)
-		fig.show()
-
-	def scatter1_init(self, fig):
-		fig.add_trace(go.Scatter(
-			y=self.y,
-			name=self.name_dataset,
-			mode='markers'
-		))
-
-	def scatter1_add(self, fig, ya=None, name=None, size=5, opacity=0.5):
-		if ya is None:
-			ya = self.ya
-		if name is None:
-			name = self.name_algorithm
-		fig.add_trace(go.Scatter(
-			y=ya,
-			name=name,
-			mode='markers',
-			marker=dict(
-				size=size,
-				opacity=opacity
-			),
-			error_y=dict(
-				type='data',
-				array=self.y - ya,
-				thickness=0.3,
-				width=2,
-				symmetric=False
-			)
-		))
-
-	def scatter1(self):
-		fig = go.Figure()
-		self.scatter1_init(fig)
-		self.scatter1_add(fig)
-		fig.show()
-
-	def scatter2_init(self, fig):
-		fig.add_trace(go.Scatter(
-			x=self.y,
-			y=self.y,
-			name=self.name_dataset,
-		))
-		fig.update_layout(
-			xaxis_title_text=self.name_dataset,
-			yaxis_title_text=self.name_algorithm
-		)
-
-	def scatter2_add(self, fig, ya=None, name=None, size=10, opacity=0.1):
-		if ya is None:
-			ya = self.ya
-		if name is None:
-			name = self.name_algorithm
-		fig.add_trace(go.Scatter(
-			x=self.y,
-			y=ya,
-			name=name,
-			mode='markers',
-			marker=dict(
-				size=size,
-				opacity=opacity
-			)
-		))
-
-	def scatter2(self):
-		fig = go.Figure()
-		self.scatter2_init(fig)
-		self.scatter2_add(fig)
-		fig.show()
-
-	def all(self):
-		self.scatter1()
-		self.histogram()
-		self.scatter2()
-
-
-def fig_get_new():
-	return go.Figure()
