@@ -159,6 +159,6 @@ sgls3 = sg_my.SGLSimple(**options3_s)
 sgls3_name = sgls1_name
 print('Calculate', dataset3_name, sgls3_name, ':\n', sgls3.calculate())
 sgls3.info()
-sgls3.info_log()
+# sgls3.info_log()
 sgls3_g = g.Graphs(sgls3, dataset3_name, sgls3_name)
-sgls3_g.all()
+# sgls3_g.all()
